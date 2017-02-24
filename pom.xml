@@ -1,0 +1,85 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.github.phoswald</groupId>
+    <artifactId>sonatype-pom</artifactId>
+    <version>1.0.0</version>
+    <relativePath />
+  </parent>
+
+  <artifactId>styx-data-lmdb</artifactId>
+  <version>0.0.1-SNAPSHOT</version>
+  <packaging>jar</packaging>
+
+  <name>styx-data-lmdb</name>
+  <description>LMDB backend for styx</description>
+  <url>https://github.com/phoswald/styx-data-lmdb</url>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <lmdbjni.version>0.4.6</lmdbjni.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.github.phoswald</groupId>
+      <artifactId>styx-data</artifactId>
+      <version>0.0.1-SNAPSHOT</version>
+    </dependency>
+    <dependency>
+      <groupId>com.github.phoswald</groupId>
+      <artifactId>styx-data</artifactId>
+      <version>0.0.1-SNAPSHOT</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.deephacks.lmdbjni</groupId>
+      <artifactId>lmdbjni</artifactId>
+      <version>${lmdbjni.version}</version>
+    </dependency>
+   <dependency>
+      <groupId>org.deephacks.lmdbjni</groupId>
+      <artifactId>lmdbjni-linux64</artifactId>
+      <version>${lmdbjni.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.deephacks.lmdbjni</groupId>
+      <artifactId>lmdbjni-osx64</artifactId>
+      <version>${lmdbjni.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.deephacks.lmdbjni</groupId>
+      <artifactId>lmdbjni-win64</artifactId>
+      <version>${lmdbjni.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>junit</groupId>
+      <artifactId>junit</artifactId>
+      <version>4.12</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.5.1</version>
+        <configuration>
+          <source>1.8</source>
+          <target>1.8</target>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
+  <scm>
+    <connection>scm:git:https://github.com/phoswald/styx-data-lmdb.git</connection>
+    <developerConnection>scm:git:https://github.com/phoswald/styx-data-lmdb.git</developerConnection>
+    <url>https://github.com/phoswald/styx-data-lmdb/tree/master</url>
+    <tag>HEAD</tag>
+  </scm>
+
+</project>
