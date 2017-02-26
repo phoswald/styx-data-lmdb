@@ -13,7 +13,7 @@
   <packaging>jar</packaging>
 
   <name>styx-data-lmdb</name>
-  <description>LMDB backend for styx</description>
+  <description>LMDB backend for styx-data</description>
   <url>https://github.com/phoswald/styx-data-lmdb</url>
 
   <properties>

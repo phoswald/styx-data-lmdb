@@ -64,7 +64,7 @@ class LmdbDatabase implements styx.data.db.Database {
                 List<Row> rows = new ArrayList<>();
                 if(cursor.first()) {
                     do {
-                        rows.add(createRow(cursor));
+                        rows.add(readRow(cursor));
                     } while(cursor.next());
                 }
                 return rows.stream();
@@ -76,9 +76,9 @@ class LmdbDatabase implements styx.data.db.Database {
     public Optional<Row> selectSingle(Path parent, String key) {
         try (Transaction tx = env.createReadTransaction(); Database db = env.openDatabase(tx, null, 0)) {
             try(BufferCursor cursor = db.bufferCursor(tx)) {
-                cursor.keyWriteBytes((parent.encode() + "\t" + key).getBytes(StandardCharsets.UTF_8));
+                writeKey(cursor, parent, key);
                 if(cursor.seekKey()) {
-                    return Optional.of(createRow(cursor));
+                    return Optional.of(readRow(cursor));
                 } else {
                     return Optional.empty();
                 }
@@ -90,15 +90,14 @@ class LmdbDatabase implements styx.data.db.Database {
     public Stream<Row> selectChildren(Path parent) {
         try (Transaction tx = env.createReadTransaction(); Database db = env.openDatabase(tx, null, 0)) {
             try(BufferCursor cursor = db.bufferCursor(tx)) {
-                byte[] prefix = (parent.encode() + "\t").getBytes(StandardCharsets.UTF_8);
-                cursor.keyWriteBytes(prefix);
+                byte[] keyPrefix = writeKeyPrefix(cursor, parent, true);
                 List<Row> rows = new ArrayList<>();
                 if(cursor.seekRange()) {
                     do {
-                        if(!startsWith(cursor, prefix)) {
+                        if(!startsWith(cursor, keyPrefix)) {
                             break;
                         }
-                        rows.add(createRow(cursor));
+                        rows.add(readRow(cursor));
                     } while(cursor.next());
                 }
                 return rows.stream();
@@ -110,15 +109,14 @@ class LmdbDatabase implements styx.data.db.Database {
     public Stream<Row> selectDescendants(Path parent) {
         try (Transaction tx = env.createReadTransaction(); Database db = env.openDatabase(tx, null, 0)) {
             try(BufferCursor cursor = db.bufferCursor(tx)) {
-                byte[] prefix = parent.encode().getBytes(StandardCharsets.UTF_8);
-                cursor.keyWriteBytes(prefix);
+                byte[] keyPrefix = writeKeyPrefix(cursor, parent, false);
                 List<Row> rows = new ArrayList<>();
                 if(cursor.seekRange()) {
                     do {
-                        if(!startsWith(cursor, prefix)) {
+                        if(!startsWith(cursor, keyPrefix)) {
                             break;
                         }
-                        rows.add(createRow(cursor));
+                        rows.add(readRow(cursor));
                     } while(cursor.next());
                 }
                 return rows.stream().sorted(Row.ITERATION_ORDER);
@@ -130,15 +128,14 @@ class LmdbDatabase implements styx.data.db.Database {
     public int allocateSuffix(Path parent) {
         try (Transaction tx = env.createReadTransaction(); Database db = env.openDatabase(tx, null, 0)) {
             try(BufferCursor cursor = db.bufferCursor(tx)) {
-                byte[] prefix = (parent.encode() + "\t").getBytes(StandardCharsets.UTF_8);
-                cursor.keyWriteBytes(prefix);
+                byte[] keyPrefix = writeKeyPrefix(cursor, parent, true);
                 int maxSuffix = 0;
                 if(cursor.seekRange()) {
                     do {
-                        if(!startsWith(cursor, prefix)) {
+                        if(!startsWith(cursor, keyPrefix)) {
                             break;
                         }
-                        maxSuffix = Math.max(maxSuffix, createRow(cursor).suffix()); // TODO (optimize) extract suffix
+                        maxSuffix = Math.max(maxSuffix, readSuffix(cursor));
                     } while(cursor.next());
                 }
                 return maxSuffix + 1;
@@ -150,11 +147,11 @@ class LmdbDatabase implements styx.data.db.Database {
     public void insert(Row row) {
         try (Transaction tx = env.createWriteTransaction(); Database db = env.openDatabase(tx, null, 0)) {
             try(BufferCursor cursor = db.bufferCursor(tx)) {
-                cursor.keyWriteBytes((row.parent().encode() + "\t" + row.key()).getBytes(StandardCharsets.UTF_8));
+                writeKey(cursor, row.parent(), row.key());
                 if(cursor.seekKey()) {
                     throw new IllegalStateException();
                 }
-                cursor.valWriteBytes((row.suffix() + "\t" + (row.value() == null ? "" : row.value())).getBytes(StandardCharsets.UTF_8));
+                writeValue(cursor, row.suffix(), row.value());
                 cursor.put();
             }
             tx.commit();
@@ -179,7 +176,7 @@ class LmdbDatabase implements styx.data.db.Database {
     public void deleteSingle(Path parent, String key) {
         try (Transaction tx = env.createWriteTransaction(); Database db = env.openDatabase(tx, null, 0)) {
             try(BufferCursor cursor = db.bufferCursor(tx)) {
-                cursor.keyWriteBytes((parent.encode() + "\t" + key).getBytes(StandardCharsets.UTF_8));
+                writeKey(cursor, parent, key);
                 if(cursor.seekKey()) {
                     cursor.delete();
                 }
@@ -192,11 +189,10 @@ class LmdbDatabase implements styx.data.db.Database {
     public void deleteDescendants(Path parent) {
         try (Transaction tx = env.createWriteTransaction(); Database db = env.openDatabase(tx, null, 0)) {
             try(BufferCursor cursor = db.bufferCursor(tx)) {
-                byte[] prefix = parent.encode().getBytes(StandardCharsets.UTF_8);
-                cursor.keyWriteBytes(prefix);
+                byte[] keyPrefix = writeKeyPrefix(cursor, parent, false);
                 if(cursor.seekRange()) {
                     do {
-                        if(!startsWith(cursor, prefix)) {
+                        if(!startsWith(cursor, keyPrefix)) {
                             break;
                         }
                         cursor.delete();
@@ -207,39 +203,72 @@ class LmdbDatabase implements styx.data.db.Database {
         }
     }
 
-    private static boolean startsWith(BufferCursor cursor, byte[] prefix) {
-        byte[] key = cursor.keyBytes();
-        if(key.length < prefix.length) {
+    private static boolean startsWith(BufferCursor cursor, byte[] keyPrefix) {
+        int keyLength = cursor.keyLength();
+        if(keyLength < keyPrefix.length) {
             return false;
         }
-        for(int i = 0; i < prefix.length; i++) {
-            if(key[i] != prefix[i]) {
+        for(int i = 0; i < keyPrefix.length; i++) {
+            if(cursor.keyByte(i) != keyPrefix[i]) {
                 return false;
             }
         }
         return true;
     }
 
-    private static Row createRow(BufferCursor cursor) {
-//      byte[] key = cursor.keyBytes();
-//      int suffix = cursor.valInt(0);
-//      byte[] value = cursor.valBytes(4, cursor.valLength() - 4);
-//      int pos = 0;
-//      while(key[pos] != 0) pos++;
-//      rows.add(new Row(
-//              Path.decode(new String(key, 0, pos, StandardCharsets.UTF_8)),
-//              new String(key, pos+1, key.length-pos-1, StandardCharsets.UTF_8),
-//              suffix,
-//              new String(value, StandardCharsets.UTF_8)));
-      String key = new String(cursor.keyBytes(), StandardCharsets.UTF_8);
-      String val = new String(cursor.valBytes(), StandardCharsets.UTF_8);
-      int p1 = key.indexOf('\t');
-      int p2 = val.indexOf('\t');
+    private static Row readRow(BufferCursor cursor) {
+        int keyLength = cursor.keyLength();
+        int keySepPos = 0;
+        while(keySepPos < keyLength && cursor.keyByte(keySepPos) != '\t') {
+            keySepPos++;
+        }
+        if(keySepPos == keyLength) {
+            throw new IllegalStateException();
+        }
+        Path parent = Path.decode(new String(cursor.keyBytes(0, keySepPos), StandardCharsets.UTF_8));
+        String key = new String(cursor.keyBytes(keySepPos+1, keyLength-keySepPos-1), StandardCharsets.UTF_8);
+        if(cursor.valByte(0) == 'S') {
+            String value = new String(cursor.valBytes(1, cursor.valLength()-1), StandardCharsets.UTF_8);
+            return new Row(parent, key, 0, value);
+        } else if(cursor.valByte(0) == 'C') {
+            int suffix = cursor.valInt(1);
+            return new Row(parent, key, suffix, null);
+        } else {
+            throw new IllegalStateException();
+        }
+    }
 
-      return new Row(
-              Path.decode(key.substring(0, p1)),
-              key.substring(p1+1),
-              Integer.parseInt(val.substring(0, p2)),
-              p2+1 == val.length() ? null : val.substring(p2+1));
+    private static int readSuffix(BufferCursor cursor) {
+        if(cursor.valByte(0) == 'C') {
+            return cursor.valInt(1);
+        } else {
+            return 0;
+        }
+    }
+
+    private static void writeKey(BufferCursor cursor, Path parent, String key) {
+        cursor.keyWriteBytes(parent.encode().getBytes(StandardCharsets.UTF_8));
+        cursor.keyWriteByte('\t');
+        cursor.keyWriteBytes(key.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static byte[] writeKeyPrefix(BufferCursor cursor, Path parent, boolean sep) {
+        String string = parent.encode();
+        if(sep) {
+            string += "\t";
+        }
+        byte[] keyPrefix = string.getBytes(StandardCharsets.UTF_8);
+        cursor.keyWriteBytes(keyPrefix);
+        return keyPrefix;
+    }
+
+    private static void writeValue(BufferCursor cursor, int suffix, String value) {
+        if(value != null) {
+            cursor.valWriteByte('S');
+            cursor.valWriteBytes(value.getBytes(StandardCharsets.UTF_8));
+        } else {
+            cursor.valWriteByte('C');
+            cursor.valWriteInt(suffix);
+        }
     }
 }
