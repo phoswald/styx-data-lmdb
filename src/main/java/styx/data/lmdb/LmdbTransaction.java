@@ -115,7 +115,7 @@ class LmdbTransaction implements DatabaseTransaction {
             if(cursor.seekKey()) {
                 throw new IllegalStateException();
             }
-            writeValue(cursor, row.suffix(), row.value());
+            writeValue(cursor, row);
             cursor.put();
         }
     }
@@ -170,30 +170,25 @@ class LmdbTransaction implements DatabaseTransaction {
     }
 
     private static Row readRow(BufferCursor cursor) {
-        int keyLength = cursor.keyLength();
-        int keySepPos = 0;
-        while(keySepPos < keyLength && cursor.keyByte(keySepPos) != '\t') {
-            keySepPos++;
-        }
-        if(keySepPos == keyLength) {
-            throw new IllegalStateException();
-        }
+        int keySepPos = getKeySepPos(cursor);
+        int valSepPos = getValSepPos(cursor);
         Path parent = Path.decode(new String(cursor.keyBytes(0, keySepPos), StandardCharsets.UTF_8));
-        String key = new String(cursor.keyBytes(keySepPos+1, keyLength-keySepPos-1), StandardCharsets.UTF_8);
-        if(cursor.valByte(0) == 'S') {
-            String value = new String(cursor.valBytes(1, cursor.valLength()-1), StandardCharsets.UTF_8);
-            return new Row(parent, key, 0, value);
-        } else if(cursor.valByte(0) == 'C') {
-            int suffix = cursor.valInt(1);
-            return new Row(parent, key, suffix, null);
-        } else {
-            throw new IllegalStateException();
+        String key = new String(cursor.keyBytes(keySepPos+1, cursor.keyLength()-keySepPos-1), StandardCharsets.UTF_8);
+        int suffix = 0;
+        String value = null;
+        if(valSepPos > 0) {
+            suffix = Integer.parseInt(new String(cursor.valBytes(0, valSepPos), StandardCharsets.UTF_8));
         }
+        if(valSepPos+1 < cursor.valLength()) {
+            value = new String(cursor.valBytes(valSepPos+1, cursor.valLength()-valSepPos-1), StandardCharsets.UTF_8);
+        }
+        return new Row(parent, key, suffix, value);
     }
 
     private static int readSuffix(BufferCursor cursor) {
-        if(cursor.valByte(0) == 'C') {
-            return cursor.valInt(1);
+        int valSepPos = getValSepPos(cursor);
+        if(valSepPos > 0) {
+            return Integer.parseInt(new String(cursor.valBytes(0, valSepPos), StandardCharsets.UTF_8));
         } else {
             return 0;
         }
@@ -215,13 +210,37 @@ class LmdbTransaction implements DatabaseTransaction {
         return keyPrefix;
     }
 
-    private static void writeValue(BufferCursor cursor, int suffix, String value) {
-        if(value != null) {
-            cursor.valWriteByte('S');
-            cursor.valWriteBytes(value.getBytes(StandardCharsets.UTF_8));
-        } else {
-            cursor.valWriteByte('C');
-            cursor.valWriteInt(suffix);
+    private static void writeValue(BufferCursor cursor, Row row) {
+        if(row.suffix() != 0) {
+            cursor.valWriteBytes(Integer.toString(row.suffix()).getBytes(StandardCharsets.UTF_8));
         }
+        cursor.valWriteByte('\t');
+        if(row.value() != null) {
+            cursor.valWriteBytes(row.value().getBytes(StandardCharsets.UTF_8));
+        }
+    }
+
+    private static int getKeySepPos(BufferCursor cursor) {
+        int length = cursor.keyLength();
+        int sepPos = 0;
+        while(sepPos < length && cursor.keyByte(sepPos) != '\t') {
+            sepPos++;
+        }
+        if(sepPos == length) {
+            throw new IllegalStateException();
+        }
+        return sepPos;
+    }
+
+    private static int getValSepPos(BufferCursor cursor) {
+        int length = cursor.valLength();
+        int sepPos = 0;
+        while(sepPos < length && cursor.valByte(sepPos) != '\t') {
+            sepPos++;
+        }
+        if(sepPos == length) {
+            throw new IllegalStateException();
+        }
+        return sepPos;
     }
 }
