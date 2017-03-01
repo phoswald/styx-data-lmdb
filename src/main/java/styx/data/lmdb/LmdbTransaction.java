@@ -18,18 +18,25 @@ class LmdbTransaction implements DatabaseTransaction {
 
     private final Transaction txn;
     private final Database dbi;
+    private boolean commit;
 
     LmdbTransaction(Transaction txn, Database dbi) {
         this.txn = txn;
         this.dbi = dbi;
+        this.commit = false;
     }
 
     @Override
     public void close() {
-        if(!txn.isReadOnly()) {
+        if(!txn.isReadOnly() && commit) {
             txn.commit();
         }
-        txn.close();
+        txn.close(); // also calls abort() if required
+    }
+
+    @Override
+    public void markCommit() {
+        commit = true;
     }
 
     @Override

@@ -7,7 +7,7 @@ import styx.data.GenericStoreTest;
 
 public class LmdbStoreTest extends GenericStoreTest {
 
-    private static final Path file = Paths.get("target/test/LmdbDatabaseTest/store.lmdb");
+    private static final Path file = Paths.get("target/test/datastore.lmdb");
 
     public LmdbStoreTest() {
         super("lmdb:" + file);
