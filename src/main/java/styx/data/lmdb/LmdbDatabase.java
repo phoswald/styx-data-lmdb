@@ -19,6 +19,12 @@ class LmdbDatabase implements styx.data.db.Database {
 
     private static final Map<String, LmdbDatabase> namedInstances = new HashMap<>();
 
+    // TODO: ENV is never closed (files MUST only be opened once per process)!
+    //
+    // See http://www.lmdb.tech/doc/index.html:
+    // Do not have open an LMDB database twice in the same process at the same time.
+    // Not even from a plain open() call - close()ing it breaks flock() advisory locking.
+
     private final Env env = new Env();
     private final Database dbi;
 
@@ -45,9 +51,7 @@ class LmdbDatabase implements styx.data.db.Database {
     }
 
     @Override
-    public void close() {
-        //env.close(); // TODO (semantics): the ENV is never closed, is styx.data.db.Database a resource or a service!?
-    }
+    public void close() { }
 
     @Override
     public DatabaseTransaction openReadTransaction() {
